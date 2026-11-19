@@ -1118,7 +1118,16 @@ unsafe fn lose_active_focus(window: HWND, userdata: &WindowData) {
 /// has to be done manually whenever `parent` receives a `WM_WINDOWPOSCHANGED` that moved it.
 unsafe fn reposition_owned_windows(parent: HWND) {
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        use windows_sys::Win32::UI::WindowsAndMessaging::GWL_WNDPROC;
+
         if unsafe { GetWindow(hwnd, GW_OWNER) } != lparam as HWND {
+            return true.into(); // continue enumeration
+        }
+
+        // Only winit's own windows keep a `WindowData` pointer in `GWL_USERDATA`, so skip any
+        // owned window that runs a different window procedure (dialogs, tooltips, helpers)
+        let window_proc = unsafe { util::get_window_long(hwnd, GWL_WNDPROC) };
+        if window_proc != public_window_callback as *const () as isize {
             return true.into(); // continue enumeration
         }
 
@@ -1135,6 +1144,58 @@ unsafe fn reposition_owned_windows(parent: HWND) {
 
     unsafe {
         EnumThreadWindows(GetCurrentThreadId(), Some(enum_proc), parent as LPARAM);
+    }
+}
+
+#[cfg(test)]
+mod owned_window_tests {
+    use super::*;
+
+    #[test]
+    fn skips_owned_windows_with_foreign_userdata() {
+        use windows_sys::core::w;
+
+        unsafe {
+            let parent = CreateWindowExW(
+                0,
+                w!("STATIC"),
+                ptr::null(),
+                WS_POPUP,
+                0,
+                0,
+                100,
+                100,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null(),
+            );
+            assert!(!parent.is_null());
+            let owned = CreateWindowExW(
+                0,
+                w!("STATIC"),
+                ptr::null(),
+                WS_POPUP,
+                0,
+                0,
+                10,
+                10,
+                parent,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null(),
+            );
+            assert!(!owned.is_null());
+            assert_eq!(GetWindow(owned, GW_OWNER), parent);
+            // Foreign window data is opaque; dereferencing this sentinel must crash the old code.
+            util::set_window_long(owned, GWL_USERDATA, 1);
+
+            reposition_owned_windows(parent);
+
+            assert_eq!(util::get_window_long(owned, GWL_USERDATA), 1);
+            assert_ne!(DestroyWindow(owned), 0);
+            assert_ne!(DestroyWindow(parent), 0);
+        }
     }
 }
 
