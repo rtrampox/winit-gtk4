@@ -13,7 +13,7 @@ version = "0.31.0-beta.3"
 [workspace.dependencies]
 # Workspace dependencies.
 # `winit` has no version here to allow using it in dev deps for docs.
-winit = { path = "winit" }
+winit = { package = "tauri-winit", path = "winit" }
 winit-android = { version = "=0.31.0-beta.3", path = "winit-android" }
 winit-appkit = { version = "=0.31.0-beta.3", path = "winit-appkit" }
 winit-common = { version = "=0.31.0-beta.3", path = "winit-common" }
